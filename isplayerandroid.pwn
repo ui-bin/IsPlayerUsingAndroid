@@ -1,19 +1,26 @@
 #include <a_samp>
 
-native SendClientCheck(playerid, type, arg, offset, size);
-forward OnClientCheckResponse(playerid, type, arg, response);
+#if !defined SendClientCheck
+    native SendClientCheck(playerid, type, arg, offset, size);
+#endif 
+
+#if !defined OnClientCheckResponse
+    forward OnClientCheckResponse(playerid, actionid, memaddr, retndata);
+#endif
+
 
 #define GetBit(%0,%1) ((%0 >> %1) & 1)
 #pragma warning disable 239
 
-            //One check is enough
-//#define CHECK_0x2
-#define CHECK_0x46
-//#define CHECK_0x47
-//#define CHECK_0x48
-#define IsPlayerAndroid(%0)                 GetPVarInt(%0, "NotAndroid") == 0)
+//configuration
+#define USE_METHOD 3 // 1 - 4
 
-#if defined CHECK_0x2
+//Just to sure user not inserting the configuration wrong
+#if USE_METHOD > 4 || USE_METHOD < 1
+    #error USE_METHOD must contain 1 - 4
+#endif
+
+#if USE_METHOD == 1
 enum Flags
 {
     b0x01,
@@ -56,101 +63,77 @@ enum Flags
 new PhysFlags[MAX_PLAYERS][Flags];
 #endif
 
+new 
+    bool:isPC;
+
 public OnFilterScriptInit()
 {
-    print("Android check has been successfully loaded.");
+    print("-----------------------------------------");
+    print("    Android Check filterscript Loaded    ");
+    print("-----------------------------------------");
+    print("Usage: make a callback, example:         ");
+    print("                                         ");
+    print("forward OnCheckOperatingSystem(playerid);");
+    print("public OnCheckOperatingSystem(playerid) {");
+    print("    //your code below here               ");
+    print("    return 1;                            ");
+    print("}                                        ");
+    print("                                         ");
+    print("-----------------------------------------");
 }
 
 public OnFilterScriptExit()
 {
-    print("\n--------------------------------------");
-    print(" Android check filterscript unloaded");
-    print("--------------------------------------\n");
+    print("-----------------------------------------");
+    print("   Android Check filterscript unloaded   ");
+    print("-----------------------------------------");
 }
 
 public OnPlayerConnect(playerid)
 {
-    new pName[MAX_PLAYER_NAME + 1 ];
-    GetPlayerName(playerid, pName, sizeof(pName));
- 
-    #if defined CHECK_0x2
+    #if USE_METHOD == 1
      for(new i = 0; i < 32; i++)
     {
         PhysFlags[playerid][Flags:i] = 0;
     }
-    #endif
-    
-    #if defined CHECK_0x48
+    #elseif USE_METHOD == 2
     SendClientCheck(playerid, 0x48, 0, 0, 2);
-    #endif
-    
-    #if defined CHECK_0x46
+    #elseif USE_METHOD == 3
     SendClientCheck(playerid, 0x46, 1598, 0, 28); // 1598 - beachball
-    #endif
-
-    #if defined CHECK_0x47
+    #elseif USE_METHOD == 4
     SendClientCheck(playerid, 0x47, 1598, 0, 48); // 1598 - beachball
     #endif
+
+    SetTimerEx(#OnCheckOS, 1500, false, "i", playerid);
     return 1;
 }
 
-public OnClientCheckResponse(playerid, type, arg, response)
+forward OnCheckOS(playerid);
+public OnCheckOS(playerid)
+    return ((!isPC) ? (CallRemoteFunction(#OnCheckOperatingSystem, "dd", playerid, 0)) : (0));
+
+public OnClientCheckResponse(playerid, actionid, memaddr, retndata)
 {
-    //new str[128], pName[MAX_PLAYER_NAME + 1];
-    //GetPlayerName(playerid, pName, sizeof(pName));
-    switch(type)
-    {
-        #if defined CHECK_0x2
-        case 0x2:
-        {
-            // CPhysicalSAInterface
-            // https://github.com/multitheftauto/mtasa-blue/blob/master/MTA10/game_sa/CPhysicalSA.h#L39-L73
-            for(new i = 0; i < 32; i++)
-            {
-                PhysFlags[playerid][Flags:i] = GetBit(arg, i);
-            }
-            //Debug
-            //format(str, sizeof(str), "Player:%s bSubmergedInWater: %d, bOnSolidSurface: %d", pName, PhysFlags[playerid][bSubmergedInWater], PhysFlags[playerid][bOnSolidSurface]);
-            //printf(str); 
-            SetPVarInt(playerid, "NotAndroid", 1);
-        }
-        #endif
 
-        #if defined CHECK_0x46
-         case 0x46:
-        {
-            // CBaseModelInfoSAInterface
-            // https://github.com/multitheftauto/mtasa-blue/blob/master/MTA10/game_sa/CModelInfoSA.h#L138-L181
-            //Debug
-            //format(str, sizeof(str), "Player:%s Model %d has checksum 0x%x", pName, arg, response);
-            //printf(str);
-            SetPVarInt(playerid, "NotAndroid", 1);
+    #if USE_METHOD == 1
+    if (actionid == 0x2) {
+
+        // CPhysicalSAInterface
+        // https://github.com/multitheftauto/mtasa-blue/blob/master/MTA10/game_sa/CPhysicalSA.h#L39-L73
+        for(new i = 0; i < 32; i++)
+            PhysFlags[playerid][Flags:i] = GetBit(memaddr, i);
         
-        }
-        #endif
-
-        #if defined CHECK_0x47
-        case 0x47: 
-        {
-            // CColModelSAInterface
-            // https://github.com/multitheftauto/mtasa-blue/blob/master/MTA10/game_sa/CColModelSA.h#L87-L91
-            //Debug            
-            //format(str, sizeof(str), "Player:%s Col model %d has checksum 0x%x", pName, arg, response);
-            //printf(str);
-            SetPVarInt(playerid, "NotAndroid", 1);
-        }
-        #endif
-
-        #if defined CHECK_0x48        
-        case 0x48:
-        {
-            //Debug
-            //format(str, sizeof(str), "Player:%s Your computer has been running for %d!", pName, arg);
-            //printf(str);
-            SetPVarInt(playerid, "NotAndroid", 1);	
-        }
-        #endif
+        CallRemoteFunction(#OnCheckOperatingSystem, "dd", playerid, ++isPC);
     }
+    #elseif USE_METHOD >= 2
+    // 0x46 | CBaseModelInfoSAInterface
+    // https://github.com/multitheftauto/mtasa-blue/blob/master/MTA10/game_sa/CModelInfoSA.h#L138-L181
+
+    // 0x47 | CColModelSAInterface
+    // https://github.com/multitheftauto/mtasa-blue/blob/master/MTA10/game_sa/CColModelSA.h#L87-L91
+    if (actionid == 0x46 || actionid == 0x47 || actionid == 0x48)
+        CallRemoteFunction(#OnCheckOperatingSystem, "dd", playerid, ++isPC);
+    #endif
     return 1;
 }
 
